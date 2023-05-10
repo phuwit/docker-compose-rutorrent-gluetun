@@ -1,0 +1,83 @@
+version: "3.2"
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    # line above must be uncommented to allow external containers to connect. See https://github.com/qdm12/gluetun/wiki/Connect-a-container-to-gluetun#external-container-to-gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      # - 8888:8888/tcp # HTTP proxy
+      # - 8388:8388/tcp # Shadowsocks
+      # - 8388:8388/udp # Shadowsocks
+      # - 8082:8082/tcp # HTTP control server
+
+      # rtorrent and rutorrent
+      - ${RUTORRENT_PORT}:${RUTORRENT_PORT}/tcp
+      - ${WEBDAV_PORT}:${WEBDAV_PORT}/tcp
+    expose:
+      - "${RT_DHT_PORT}/udp"
+      - "${XMLRPC_PORT}"
+      - "${RUTORRENT_PORT}"
+      - "${WEBDAV_PORT}"
+    volumes:
+      - ./gluetun:/gluetun
+    # env_file:
+    #   - vpn-login.env
+    environment:
+      # See https://github.com/qdm12/gluetun/wiki
+      - VPN_SERVICE_PROVIDER=vpn
+      - VPN_TYPE=openvpn
+      # OpenVPN:
+      - OPENVPN_USER=
+      - OPENVPN_PASSWORD=
+      - SERVER_REGIONS=
+      # Wireguard:
+      # - WIREGUARD_PRIVATE_KEY=
+      # - WIREGUARD_ADDRESSES=
+      # Timezone for accurate log times
+      - TZ=
+      # Server list updater. See https://github.com/qdm12/gluetun/wiki/Updating-Servers#periodic-update
+      # - UPDATER_PERIOD=
+      # - UPDATER_VPN_SERVICE_PROVIDERS=
+      - FIREWALL_VPN_INPUT_PORTS=${RT_DHT_PORT},${RT_INC_PORT}
+      # - HTTP_CONTROL_SERVER_ADDRESS=:8082
+  
+  geoip-updater:
+    image: crazymax/geoip-updater:latest
+    # network_mode: "container:gluetun" # optional
+    volumes:
+      - "./data/geoip:/data"
+    env_file:
+      - "./geoip-updater.env"
+    restart: always
+
+  rtorrent-rutorrent:
+    image: crazymax/rtorrent-rutorrent:latest
+    network_mode: "container:gluetun"
+    env_file:
+      - "rtorrent-rutorrent-config.env"
+      - ".env"
+    volumes:
+      - "./data:/data"
+      - "./downloads:/downloads"
+      - "./passwd:/passwd"
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 32000
+        hard: 40000
+    restart: always
+
+  rtorrent-logs:
+    image: bash
+    network_mode: "container:gluetun"
+    command: bash -c 'tail -f /log/*.log'
+    depends_on:
+      - rtorrent-rutorrent
+    volumes:
+      - "./data/rtorrent/log:/log"
+    restart: always
